@@ -12,12 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out private game source
-        uses: actions/checkout@v4
-        with:
-          repository: mindrapeofficial-wq/rivals-auto-battle
-          ssh-key: ${{ secrets.RIVALS_SOURCE_DEPLOY_KEY }}
-          persist-credentials: false
-          path: game
+        env:
+          SOURCE_KEY_B64: ${{ secrets.RIVALS_SOURCE_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$SOURCE_KEY_B64" | base64 -d > ~/.ssh/rivals_source
+          chmod 600 ~/.ssh/rivals_source
+          ssh-keygen -y -f ~/.ssh/rivals_source >/dev/null
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/rivals_source -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git clone --depth 1 git@github.com:mindrapeofficial-wq/rivals-auto-battle.git game
+          rm -f ~/.ssh/rivals_source
       - name: Prepare Docker builder
         uses: docker/setup-buildx-action@v3
       - name: Sign in to GitHub Container Registry
