@@ -1,0 +1,35 @@
+name: Build RIVALS server image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out private game source
+        uses: actions/checkout@v4
+        with:
+          repository: mindrapeofficial-wq/rivals-auto-battle
+          ssh-key: ${{ secrets.RIVALS_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          path: game
+      - name: Prepare Docker builder
+        uses: docker/setup-buildx-action@v3
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: ./game
+          file: ./game/Dockerfile
+          push: true
+          tags: ghcr.io/mindrapeofficial-wq/rivals-auto-battle:latest
