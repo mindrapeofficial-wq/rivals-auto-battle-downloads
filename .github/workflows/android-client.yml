@@ -21,7 +21,7 @@ concurrency:
 
 env:
   # This full SHA pins the reviewed game source independently of future main changes.
-  REVIEWED_SOURCE_COMMIT: 160b4d0ad7f5e185f306943b7d8b82e251d5a7d4
+  REVIEWED_SOURCE_COMMIT: 86edc69dbd0f63b7ae92e9c13cc8e8dcfd6b7e39
   VITE_API_URL: https://rivals-auto-battle.onrender.com
   NODE_OPTIONS: --max-old-space-size=4096
 

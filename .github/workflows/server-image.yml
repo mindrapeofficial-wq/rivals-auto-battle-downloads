@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REVIEWED_SOURCE_COMMIT: 160b4d0ad7f5e185f306943b7d8b82e251d5a7d4
+  REVIEWED_SOURCE_COMMIT: 86edc69dbd0f63b7ae92e9c13cc8e8dcfd6b7e39
 
 jobs:
   build:
