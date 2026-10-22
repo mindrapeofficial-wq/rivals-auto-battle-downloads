@@ -1,27 +1,57 @@
 name: Build RIVALS server image
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/server-image.yml
   workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full reviewed commit SHA from the private game repository
+        required: false
+        type: string
 
 permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: rivals-server-image
+  cancel-in-progress: false
+
+env:
+  REVIEWED_SOURCE_COMMIT: 160b4d0ad7f5e185f306943b7d8b82e251d5a7d4
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - name: Check out private game source
+      - name: Check out the exact reviewed game source
+        id: source
         env:
+          SOURCE_COMMIT: ${{ inputs.source_commit || env.REVIEWED_SOURCE_COMMIT }}
           SOURCE_KEY_B64: ${{ secrets.RIVALS_SOURCE_KEY_B64 }}
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
-          printf '%s' "$SOURCE_KEY_B64" | base64 -d > ~/.ssh/rivals_source
-          chmod 600 ~/.ssh/rivals_source
-          ssh-keygen -y -f ~/.ssh/rivals_source >/dev/null
-          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/rivals_source -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-            git clone --depth 1 git@github.com:mindrapeofficial-wq/rivals-auto-battle.git game
-          rm -f ~/.ssh/rivals_source
+          set -euo pipefail
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$SOURCE_KEY_B64"
+          umask 077
+          source_key="$RUNNER_TEMP/rivals_source"
+          trap 'rm -f "$source_key"' EXIT
+          printf '%s' "$SOURCE_KEY_B64" | base64 -d > "$source_key"
+          ssh-keygen -y -f "$source_key" >/dev/null
+          git init game
+          git -C game remote add origin git@github.com:mindrapeofficial-wq/rivals-auto-battle.git
+          GIT_SSH_COMMAND="ssh -i $source_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git -C game fetch --no-tags --depth 1 origin "$SOURCE_COMMIT"
+          git -C game checkout --detach FETCH_HEAD
+          actual_commit="$(git -C game rev-parse HEAD)"
+          test "$actual_commit" = "$SOURCE_COMMIT"
+          printf 'commit=%s\n' "$actual_commit" >> "$GITHUB_OUTPUT"
+          printf 'Verified source commit: %s\n' "$actual_commit"
       - name: Prepare Docker builder
         uses: docker/setup-buildx-action@v3
       - name: Sign in to GitHub Container Registry
@@ -31,6 +61,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: ./game
@@ -38,4 +69,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: true
-          tags: ghcr.io/mindrapeofficial-wq/rivals-auto-battle:latest
+          tags: |
+            ghcr.io/mindrapeofficial-wq/rivals-auto-battle:latest
+            ghcr.io/mindrapeofficial-wq/rivals-auto-battle:sha-${{ steps.source.outputs.commit }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/mindrapeofficial-wq/rivals-auto-battle
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
+      - name: Record the reviewed deployment image
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf 'Verified source: %s\nImage digest: %s\n' "$SOURCE_COMMIT" "$IMAGE_DIGEST"
+          printf 'Source: `%s`\n\nImage: `ghcr.io/mindrapeofficial-wq/rivals-auto-battle@%s`\n' \
+            "$SOURCE_COMMIT" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
